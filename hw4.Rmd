@@ -1,0 +1,121 @@
+---
+title: "P8130: Homework 4"
+author: "Alyssa Vanderbeek (amv2187)"
+date: "16 November 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(tidyverse)
+#library(kableExtra)
+```
+
+## Problem 2
+
+### For this problem, you will be using data ‘HeartDisease.csv’. The investigator is mainly interested if there is an association between ‘total cost’ (in dollars) of patients diagnosed with heart disease and the ‘number of emergency room (ER) visits’. Further, the model will need to be adjusted for other factors, including ‘age’, ‘gender’, ‘number of complications’ that arose during treatment, and ‘duration of treatment condition’.
+
+```{r}
+heart = read.csv('./data/HeartDisease.csv')
+```
+
+### (a) Provide a short description of the data set: what is the main outcome, main predictor and other important covariates. Also, generate appropriate descriptive statistics for all variables of interest (continuous and categorical) – no test required.
+
+The dataset contains information pertaining to patient demographics (age, gender), ER visits (frequency, duration), and healthcare cost for 788 patients with heart disease. The outcome of interest is the total cost per patient as a function of number of ER visits, primarily. The length of the ER visit and number of interventions are also likely to affect the total cost. Table 1 shows variable distributions for all patients; Table 2 examines distributions according to gender. 
+
+```{r, warning=F}
+# both genders
+heart %>%
+  select(age, drugs, duration, ERvisits, totalcost, comorbidities, complications, interventions) %>%
+  map_df(., summary) %>%
+  do.call(rbind, .) %>%
+  `colnames<-`(c('Min', '1st Quartile', 'Median', 'Mean', '3rd Quartile', 'Max')) %>%
+  knitr::kable(caption = 'Variable summaries across genders', digits = 3)
+
+# by gender
+heart %>%
+  mutate(gender = recode(gender, '0' = 'M', '1' = 'F')) %>%
+  group_by(gender) %>% # group by gender
+  select(totalcost, age, interventions, drugs, ERvisits, complications, comorbidities, duration) %>%
+  do(desc = broom::tidy(summary(.))) %>% # take summary
+  unnest %>% 
+  select(gender, Var2, n) %>%
+  separate(., n, into = c('var', 'value'), sep = ':') %>%
+  filter(Var2 != "   gender") %>%
+  spread(key = var, value = value) %>% 
+  group_by(Var2) %>%
+  arrange(Var2, gender) %>% 
+  select(Var2, gender:"Min.   ") %>%
+  rename(' ' = Var2) %>%
+  knitr::kable(caption = 'Variable summaries by gender')
+```
+
+### (b) Investigate the shape of the distribution for variable ‘total cost’ and try different transformations, if needed.
+
+Variable 'totalcost' is highly skewed; applying a log transformation normalizes the distribution. (See histograms below)
+
+```{r}
+par(mfrow = c(1,2))
+hist(heart$totalcost, main = 'Original scale')
+hist(log(heart$totalcost), main = 'Log scale') # apply log transformation
+dev.off()
+```
+
+### (c) Create a new variable called ‘comp_bin’ by dichotomizing ‘complications’: 0 if no complications, and 1 otherwise.
+
+```{r, echo=T}
+heart = heart %>% mutate(comp_bin = ifelse(complications == 0, 0, 1))
+```
+
+### (d) Based on our decision in part b), fit a simple linear regression (SLR) between the original or transformed ‘total cost’ and predictor ‘ERvisits’. This includes a scatterplot and results of the regression, with appropriate comments on significance and interpretation of the slope.
+
+Using the log-transformed total cost variable (when total cost is $0, I added 0.01 before taking the log), I run an SLR using the number of ER vists as the predictor. 
+
+```{r}
+cost_transform = ifelse(heart$totalcost == 0, log(heart$totalcost + 0.01), log(heart$totalcost)) # create transformed variable 
+
+# fit regression and print output
+slr = lm(cost_transform ~ heart$ERvisits)
+summary(slr)
+
+# scatterplot with SLR
+plot(heart$ERvisits, cost_transform,
+     xlab = 'Number of ER visits',
+     ylab = 'Total cost (logarithm)')
+abline(slr, lwd = 2, col = 'red')
+```
+
+According to the fitted model, the number of ER visits a patient experiences is a significant predictor of their cost to the hospital (p<0.001). Specifically, for each additional ER visit, a patient's cost increases by about 25% on average. $(e^{0.2251} = 1.252)$.
+
+### (e) Fit a multiple linear regression (MLR) with ‘comp_bin’ and ‘ERvisits’ as predictors.
+
+```{r}
+mlr = lm(cost_transform ~ heart$ERvisits + heart$comp_bin)
+summary(mlr)
+```
+
+### (i) Test if ‘comp_bin’ is an effect modifier of the relationship between ‘total cost’ and ‘ERvisits’. Comment.
+
+### (ii) Test if ‘comp_bin’ is a confounder of the relationship between ‘total cost’ and ‘ERvisits’. Comment.
+
+Note that the coefficient for ER visits changes from 0.2251 in the SLR to 0.202 in the MLR. Since this change is >10%, we suspect that the experience of complications is a confounder. We can also see this given that 'comp_bin' is correlated with ER visits (`r cor(heart$ERvisits, heart$comp_bin)`) and the outcome, total cost (`r cor(heart$totalcost, heart$comp_bin)`).
+
+### (iii) Decide if ‘comp_bin’ should be included along with ‘ERvisits. Why or why not? 
+
+### (f) Use your choice of model in part e) and add additional covariates (age, gender, and duration of treatment).
+
+### (i) Fit a MLR, show the regression results and comment.
+
+```{r}
+mlr = lm(cost_transform ~ heart$ERvisits + heart$comp_bin + heart$age + heart$gender + heart$duration)
+summary(mlr)
+```
+
+According to the MLR model, age, presence of complications during treatment, and duration of treatment are significant predictors of total cost. Gender is marginal; there is not quite enough evidence at the 5% significance level to suggest that there is a difference in treatment cost between men and women (p=0.0521). 
+
+### (ii) Compare the SLR and MLR models. Which model would you use to address the investigator’s objective and why?
+
+I would use the MLR to answer the investigator's question of whether there is an association between the number of ER visits and the total cost of treatment for heart disease patients. Although the conclusions drawn from both models are the same (there is an association), we get a better idea of the degree of this association by accounting for other demographic information in the MLR. Ultimately, after accounting for age, gender, complications, and the duration of treatment, the number of ER visits has a smaller effect than was shown in the SLR. 
+
+
