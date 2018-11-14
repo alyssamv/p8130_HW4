@@ -133,7 +133,7 @@ I would use the MLR to answer the investigator's question of whether there is an
 ```{r}
 ptx = readxl::read_excel('./data/PatSatisfaction.xlsx')
 
-cor(ptx)
+round(cor(ptx),3)
 ```
 
 As shown in the correlation matrix above, all parameters are pairwise correlated: as age increases, satisfaction decreases, severity of illness increases, and anxiety level increases; as severity of illness increases, satisfaction decreases and anxiety level increases; and as anxiety level increases, satisfaction decreases.
@@ -147,7 +147,7 @@ $$H_1: \text{the variable is predictive of the outcome} (\beta \neq 0)$$
 We conclude that the variable is a significant predictor when the calculated t-statistic $t* \geq t_{1-\alpha, n-p-1} = t_{0.95, 42}$
 
 ```{r}
-mlr = lm(ptx$Safisfaction ~ ptx$Age + ptx$Severity + ptx$Anxiety)
+mlr = lm(Safisfaction ~ Age + Severity + Anxiety, data = ptx)
 summary(mlr)
 ```
 
@@ -156,17 +156,35 @@ According to the MLR above, only age is a significant predictor of patient satis
 ### (c) Show the regression results for all estimated coefficients with 95% CIs. Interpret the coefficient and 95% CI associated with ‘severity of illness’.
 
 ```{r}
-
+summary(mlr) %>% 
+  coefficients %>%
+  as.data.frame %>%
+  rownames_to_column('Variable') %>%
+  mutate(`95% CI lower` = `Estimate` - qt(0.975, 42)*`Std. Error`,
+         `95% CI upper` = `Estimate` + qt(0.975, 42)*`Std. Error`) %>%
+  select(1, 2, 6, 7) %>%
+  knitr::kable(caption = 'Coefficients and 95% CIs in MLR',
+               digits = 3)
 ```
+
+As severity of illness increases by one unit, patient satisfaction decreases on average by 0.44 points, all else constant. We are 95% confident that the change in patient satisfaction is between -1.43 and +0.55 points as severity of illness increases marginally (all else held constant). Note that this confidence interval reflects the high p-value (0.3741) observed in the MLR model above.
 
 ### (d) Obtain an interval estimate for a new patient’s satisfaction when Age=35, Severity=42, Anxiety=2.1. Interpret the interval.
 
+```{r}
+t = data.frame(Age = 35,
+           Severity = 42,
+           Anxiety = 2.1)
+predict(mlr, newdata = t, interval = "confidence")
+```
+
+The expected satisfaction level to be 71.68 points for an individual of age 35, whose illness severity is 42 points and anxiety level is at 2.1. We are 95% confident that the satisfaction level for this person is between 64.24 and 79.13 points. 
 
 
 ### (e) Test whether ‘anxiety level’ can be dropped from the regression model, given the other two covariates are retained. State the hypotheses, decision rule and conclusion.
 
 Testing for a regression relation (global F-test) has the following hypotheses:
-$$H_0: \text{no parameters predict patient satisfactio}n$$
+$$H_0: \text{no parameters predict patient satisfaction}$$
 $$H_1: \text{at least one parameter predictive of patient satisfaction}$$
 
 The null hypothesis is rejected in favor of the alternative when the F statistics is $\geq F_{1-\alpha, p, n-p-1} = F_{0.95, 3, 42}$
@@ -175,4 +193,4 @@ The null hypothesis is rejected in favor of the alternative when the F statistic
 anova(mlr)
 ```
 
-
+After accounting for age and severity of illness, anxiety is not a significant predictor of patient satisfaction at the 5% significance level (p=0.065).
